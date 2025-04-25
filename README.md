@@ -38,8 +38,8 @@ Ready for your very own **Clippy 2.Oh**? Follow these steps:
 1.  **Clone the Repository:**
     ```bash
     # Make sure you grab the right code!
-    git clone https://github.com/bm-github/clippy2Oh.git
-    cd clippy2Oh
+    git clone https://github.com/bm-github/clippy2-oh.git
+    cd clippy2-oh
     ```
 2.  **Install Dependencies:** (If you skipped the step above)
     ```bash
@@ -55,7 +55,7 @@ Ready for your very own **Clippy 2.Oh**? Follow these steps:
         OPENROUTER_MODEL="YOUR_OPENROUTER_MODEL"
         ```
 4.  **Character Assets:** 🖼️
-    *   Make sure you have these files in the same folder (or change the paths in `clippy2Oh.py`):
+    *   Make sure you have these files in the same folder (or change the paths in `clippy2-oh.py`):
         *   `character_idle.png` (or `character_idle.gif`)
         *   `character_busy.png` (or `character_busy.gif`)
         *   `tray_icon.png` (a little 32x32 guy for the system tray)
@@ -68,9 +68,9 @@ It's super easy:
 1.  **Run the Script (Windowless Mode!):**
     ```bash
     # On Windows/Mac, 'pythonw' often prevents an extra console window!
-    pythonw clippy2Oh.py
+    pythonw clippy2-oh.py
     # If 'pythonw' isn't found or you want the console, just use 'python':
-    # python clippy2Oh.py
+    # python clippy2-oh.py
     ```
 2.  **Say Hello!** I should pop up on your screen (probably bottom-right, classic spot!).
 3.  **Click Me!** The input box appears below me. Let's chat!
@@ -87,9 +87,9 @@ It's super easy:
 Want to tinker with **Clippy 2.Oh**? Go for it!
 
 *   **Appearance:** Swap out `character_idle.png`/`.gif`, `character_busy.png`/`.gif`, and `tray_icon.png` with your own images! (Check `CHARACTER_WIDTH`/`HEIGHT` in the script for size hints). Maybe give me a party hat?
-*   **Personality:** Edit the `SYSTEM_PROMPT` variable near the top of `clippy2Oh.py`. This is where you tell the AI how to act! Make me sassy, serious, or super-duper helpful! ✨
+*   **Personality:** Edit the `SYSTEM_PROMPT` variable near the top of `clippy2-oh.py`. This is where you tell the AI how to act! Make me sassy, serious, or super-duper helpful! ✨
 *   **AI Brain:** Change `OPENROUTER_MODEL` in your `.env` file to try different AI models from OpenRouter. Experiment with my intelligence!
-*   **Sizes & Colors:** Adjust constants like `BUBBLE_WIDTH`, `BUBBLE_FILL_COLOR`, etc., at the beginning of `clippy2Oh.py`. Match your desktop theme!
+*   **Sizes & Colors:** Adjust constants like `BUBBLE_WIDTH`, `BUBBLE_FILL_COLOR`, etc., at the beginning of `clippy2-oh.py`. Match your desktop theme!
 *   **History Limit:** Just FYI, I only remember the last `MAX_HISTORY_MESSAGES` (default: 10) messages between us. My memory isn't *infinite*... yet!
 *   **Look & Feel:** All the windows are frameless and transparent for that sleek, modern overlay vibe. **2.Oh** style!
 
