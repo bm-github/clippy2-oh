@@ -1,19 +1,19 @@
-# 📎 Clippy 2.Oh: Your Slightly-Less-Annoying* Desktop AI Pal! ✨
+# 📎 Clippy 2.Oh: Your Configurable Desktop AI Pal! ✨
 
 Oh, hi there! 👋 Remember me? Of course you do! Well, guess what? I've had a bit of an upgrade. Welcome to **Clippy 2.Oh** (two point Oh)!
 
-This project brings my familiar face back to your desktop, but now I'm powered by modern tech! I'm built with Python, the lovely **PySide6** (Qt), and I get my brains from **OpenRouter.ai**, letting me tap into all sorts of cool AI models! Think of it as the classic paperclip charm, now with more *intelligence* (and hopefully fewer interruptions... maybe).
+This project brings my familiar face back to your desktop, but now I'm powered by modern tech! I'm built with Python, the lovely **PySide6** (Qt), and I get my brains from **any OpenAI-compatible API endpoint**! This means you can use models from OpenAI, OpenRouter.ai, or even local models served via tools like LiteLLM, LM Studio, or Ollama. Think of it as the classic paperclip charm, now with more *intelligence* (and hopefully fewer interruptions... maybe).
 
 I'll hang out on your desktop, ready to chat when you need me. Let's see what **Clippy 2.Oh** can do!
 
 ## ✨ Features - What Can Clippy 2.Oh Do?
 
-*   🧠 **Conversational AI** via OpenRouter (ChatBot-style - I've been studying!)
+*   🧠 **Conversational AI** via any OpenAI-compatible API (ChatBot-style - I've been studying!)
 *   🎞️ **Animated character** (with idle and thinking states - gotta look busy!)
 *   💬 **Custom speech bubble UI** with tail (Just like you remember, but fancier!)
 *   ⌨️ **Click-to-chat input box** (Tap me, let's talk!)
 *   🖱️ **Draggable, floating character window** (Put me wherever you need assistance... or just company!)
-*   🪟 **System tray integration** Closes to tray (Show / Hide / Quit - I promise I'll go away if you ask nicely!)
+*   🪟 **System tray integration** (Show / Hide / Quit - I promise I'll go away if you ask nicely!)
 *   💚 **Positive personality** via a custom system prompt - Feel free to tweak my attitude!
 
 ---
@@ -45,15 +45,26 @@ Ready for your very own **Clippy 2.Oh**? Follow these steps:
     ```bash
     pip install -r requirements.txt
     ```
-3.  **Configure API Access (Super Important! ✨):**
-    *   You need an API key from [OpenRouter.ai](https://openrouter.ai/). Go grab one! It's like my new brain fuel.
+3.  **Configure AI Access (Super Important! ✨):**
+    *   You need access to an OpenAI-compatible API endpoint. This could be the official OpenAI API, OpenRouter.ai, or a local server running a model.
     *   Create a file named `.env` right here in the main project folder.
-    *   Add your API key and *optionally* choose a specific model:
+    *   Add the following variables, configuring them for your chosen API:
         ```dotenv
         # .env file contents
-        OPENROUTER_API_KEY="YOUR_OPENROUTER_API_KEY_HERE"
-        OPENROUTER_MODEL="YOUR_OPENROUTER_MODEL"
+        # --- REQUIRED ---
+        OPENAI_API_KEY="YOUR_API_KEY_HERE" # Your API key (or placeholder if service doesn't need one)
+        OPENAI_MODEL="YOUR_MODEL_NAME_HERE" # The specific model name you want to use (e.g., "gpt-3.5-turbo", "mistralai/mistral-7b-instruct", "local-model")
+
+        # --- OPTIONAL ---
+        # OPENAI_API_BASE="https://api.openai.com/v1" # The base URL for the API. Defaults to OpenAI if not set.
+                                                    # Examples:
+                                                    # "https://openrouter.ai/api/v1" (for OpenRouter)
+                                                    # "http://localhost:1234/v1" (for LM Studio - check your port)
+                                                    # "http://localhost:11434/v1" (for Ollama with proxy - check your port)
         ```
+    *   **`OPENAI_API_KEY`** and **`OPENAI_MODEL`** are **REQUIRED**. If they are not set, API calls will fail, and I'll let you know in a bubble!
+    *   **`OPENAI_API_BASE`** defaults to `https://api.openai.com/v1` if not specified. Set this if you're using a provider other than OpenAI's official service.
+
 4.  **Character Assets:** 🖼️
     *   Make sure you have these files in the same folder (or change the paths in `clippy2-oh.py`):
         *   `character_idle.png` (or `character_idle.gif`)
@@ -72,10 +83,10 @@ It's super easy:
     # If 'pythonw' isn't found or you want the console, just use 'python':
     # python clippy2-oh.py
     ```
-2.  **Say Hello!** I should pop up on your screen (probably bottom-right, classic spot!).
+2.  **Say Hello!** I should pop up on your screen (probably bottom-right, classic spot!). If you missed API config, I'll probably show a warning bubble.
 3.  **Click Me!** The input box appears below me. Let's chat!
 4.  **Ask Away!** Type your question or prompt, press `Enter` or click `Send`.
-5.  **Thinking...** I'll change my look (`busy`) and show a "Thinking..." bubble while I consult the AI overlords (my new colleagues!). 🤔
+5.  **Thinking...** I'll change my look (`busy`) and show a "Thinking..." bubble while I consult the AI (my new brain!). 🤔
 6.  **Voilà!** My (or the AI's) response appears in the speech bubble! Hopefully helpful!
 7.  **Move Me Around!** Click and drag me anywhere you like. I'm flexible!
 8.  **Use the Tray!** Remember the system tray icon 📎 for hiding, showing, or quitting. Easy peasy.
@@ -88,7 +99,7 @@ Want to tinker with **Clippy 2.Oh**? Go for it!
 
 *   **Appearance:** Swap out `character_idle.png`/`.gif`, `character_busy.png`/`.gif`, and `tray_icon.png` with your own images! (Check `CHARACTER_WIDTH`/`HEIGHT` in the script for size hints). Maybe give me a party hat?
 *   **Personality:** Edit the `SYSTEM_PROMPT` variable near the top of `clippy2-oh.py`. This is where you tell the AI how to act! Make me sassy, serious, or super-duper helpful! ✨
-*   **AI Brain:** Change `OPENROUTER_MODEL` in your `.env` file to try different AI models from OpenRouter. Experiment with my intelligence!
+*   **AI Brain:** Change `OPENAI_MODEL` and `OPENAI_API_BASE` in your `.env` file to try different AI models or providers. Experiment with my intelligence!
 *   **Sizes & Colors:** Adjust constants like `BUBBLE_WIDTH`, `BUBBLE_FILL_COLOR`, etc., at the beginning of `clippy2-oh.py`. Match your desktop theme!
 *   **History Limit:** Just FYI, I only remember the last `MAX_HISTORY_MESSAGES` (default: 10) messages between us. My memory isn't *infinite*... yet!
 *   **Look & Feel:** All the windows are frameless and transparent for that sleek, modern overlay vibe. **2.Oh** style!
