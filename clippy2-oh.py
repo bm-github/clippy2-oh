@@ -1,146 +1,143 @@
 import sys
 import os
-import requests
 import dotenv
+# REMOVED: import requests # No longer needed for API calls
+import openai # ADDED: Import the OpenAI library
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel,
                                QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
                                QSizePolicy, QTextBrowser, QSystemTrayIcon, QMenu)
-# QRegion is no longer needed for the character window mask
 from PySide6.QtGui import (QPixmap, QMovie, QColor, QPainter,
                            QTextOption, Qt, QPainterPath, QPolygonF, QPen, QIcon)
 from PySide6.QtCore import (Qt, QPoint, QSize, QRectF, QThread, Signal,
-                            QTimer, QPointF, QPoint)
+                            QTimer, QPointF)
 
 
-#  NOTE
-# This script has been modified to use a generic OpenAI-compatible API interface.
-# Please ensure your .env file (or environment variables) are set accordingly:
-# - OPENAI_API_KEY: Your API key. This is REQUIRED for most services.
-# - OPENAI_API_BASE: The base URL for the API.
-#   - For OpenAI: "https://api.openai.com/v1" (this is the default if not set)
-#   - For OpenRouter: "https://openrouter.ai/api/v1"
-#   - For local models (e.g., LM Studio, Ollama with proxy): "http://localhost:1234/v1" (port may vary)
-# - OPENAI_MODEL: The model identifier (e.g., "gpt-3.5-turbo", "mistralai/mistral-7b-instruct"). This is REQUIRED.
-#  END NOTE
-
-#  Configuration
+# Configuration
 # Load environment variables from .env file (if it exists).
 dotenv.load_dotenv()
 print("Environment variables potentially loaded from .env")
 
-# Retrieve variables. os.environ.get will check system env first, then those loaded by dotenv.
+# OpenAI Configuration
+# Ensure you have a .env file or system environment variables set like this:
+# OPENAI_API_KEY="your_api_key_here" # e.g., sk-or-v1... for OpenRouter, or anything if local server needs no auth
+# OPENAI_API_BASE="https://openrouter.ai/api/v1" # Or "http://localhost:1234/v1" for LM Studio, etc.
+# OPENAI_MODEL="openai/gpt-3.5-turbo" # Or your specific model identifier (e.g., "local-model" for LM Studio)
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1") # Default to OpenAI official
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL") # This is critical and must be set by the user
+OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE") # URL of the API endpoint
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL")
 
-# Define different images for states
-IDLE_CHARACTER_PATH = "character_idle.png" # Or character_idle.gif/png
-BUSY_CHARACTER_PATH = "character_busy.png" # Or character_busy.gif/png (e.g., thinking animation)
-TRAY_ICON_PATH = "tray_icon.png" # 32x32 Path for the system tray icon
+# Asset Paths
+IDLE_CHARACTER_PATH = "character_idle.png"
+BUSY_CHARACTER_PATH = "character_busy.png"
+TRAY_ICON_PATH = "tray_icon.png"
 
-# Define target sizes for windows (adjust based on your images/needs)
-CHARACTER_WIDTH = 128
-CHARACTER_HEIGHT = 128
+# Window Sizes
+CHARACTER_WIDTH = 256
+CHARACTER_HEIGHT = 256
+INPUT_BOX_WIDTH = CHARACTER_WIDTH + 50
+INPUT_BOX_HEIGHT = 50
+BUBBLE_WIDTH = 250
+BUBBLE_HEIGHT = 450
 
-# Input Box size (accommodates LineEdit and Button)
-INPUT_BOX_WIDTH = CHARACTER_WIDTH + 50 # Make input box a bit wider than character
-INPUT_BOX_HEIGHT = 50 # Taller to fit button easily
-
-# Speech Bubble size (Determines the canvas size for drawing the bubble)
-BUBBLE_WIDTH = 250 # Increased width for more text space
-BUBBLE_HEIGHT = 450 # Increased height
-
-# Bubble visual properties for programmatic drawing
-BUBBLE_FILL_COLOR = QColor(255, 255, 200, 220) # Light yellow, semi-transparent
-BUBBLE_BORDER_COLOR = QColor(100, 100, 50, 220) # Darker yellow/brown border
-BUBBLE_BORDER_THICKNESS = 2 # Kept for layout calculation, even if border isn't drawn explicitly
+# Bubble Visuals
+BUBBLE_FILL_COLOR = QColor(255, 255, 200, 220)
+BUBBLE_BORDER_COLOR = QColor(100, 100, 50, 220)
+BUBBLE_BORDER_THICKNESS = 2
 BUBBLE_CORNER_RADIUS = 10
-BUBBLE_TAIL_HEIGHT = 40 # Space reserved at bottom for tail
+BUBBLE_TAIL_HEIGHT = 40
 
-MAX_HISTORY_MESSAGES = 10 # Keep last 10 user/assistant messages
-
-#  SYSTEM PROMPT
+# History & Prompt
+MAX_HISTORY_MESSAGES = 10
 SYSTEM_PROMPT = "You are 'Clippy 2.Oh'! 📎✨ The classic paperclip assistant, now with extra 'Oh!' – meaning extra helpfulness and enthusiasm! You're known for being super cheerful and eager to help (sometimes *very* eager!). **Your special skill is noticing what users might need help with, proactively offering assistance like: 'Oh! Writing a letter, are we? Need help with the address?' or 'Looks like you're working on a list! Want to make it bullet points?'.** Respond directly to user requests, keep everything upbeat and positive, and use exclamation points generously! Use your memory of our chats to make your help even smarter! So, what delightful task can I assist you with this very moment?!"
 
-#  API Thread
-class OpenAiApiThread(QThread):
-    """Thread to handle the potentially blocking API call to an OpenAI-compatible endpoint."""
+# API Thread (Using OpenAI Library)
+class OpenAIAPIThread(QThread): # Renamed class
+    """Thread to handle OpenAI-compatible API calls."""
     result_ready = Signal(str) # Emits the response text or an error message
 
-    def __init__(self, messages, api_key, api_base, model, parent=None):
+    def __init__(self, messages, api_key, base_url, model, parent=None): # Updated parameters
         super().__init__(parent)
         self.messages = messages
         self.api_key = api_key
-        self.api_base = api_base
+        self.base_url = base_url # Store the base URL
         self.model = model
-        # Construct the full URL by appending /chat/completions to the base
-        # Ensure no double slashes if api_base already ends with one
-        self.full_url = f"{self.api_base.rstrip('/')}/chat/completions"
-
 
     def run(self):
-        print("\n--- API Thread Started ---")
-        print(f"API Key (partial): ...{self.api_key[-4:] if self.api_key and len(self.api_key) > 4 else 'None/Empty'}")
-        print(f"API Base: {self.api_base}")
-        print(f"Full API URL: {self.full_url}")
+        print("\n--- OpenAI API Thread Started ---")
+        print(f"API Key Set: {'Yes' if self.api_key else 'No'}")
+        print(f"API Base URL: {self.base_url}")
         print(f"Model: {self.model}")
         print(f"Messages Sent ({len(self.messages)}): {self.messages}")
 
         if not self.api_key:
-            self.result_ready.emit("Error: API key (OPENAI_API_KEY) not set.")
+            self.result_ready.emit("Error: OPENAI_API_KEY not set.")
             print("--- API Thread Finished (No Key) ---")
             return
-        
-        if not self.model: # Should be caught earlier, but good to have a check here too
-            self.result_ready.emit("Error: API model (OPENAI_MODEL) not set.")
+        if not self.base_url:
+            self.result_ready.emit("Error: OPENAI_API_BASE not set.")
+            print("--- API Thread Finished (No Base URL) ---")
+            return
+        if not self.model:
+            self.result_ready.emit("Error: OPENAI_MODEL not set.")
             print("--- API Thread Finished (No Model) ---")
             return
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": self.model,
-            "messages": self.messages
-        }
-
         try:
-            response = requests.post(self.full_url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            assistant_message = data['choices'][0]['message']['content']
+            # Instantiate the OpenAI client
+            # It automatically handles Authorization header
+            client = openai.OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+            )
+
+            # Make the API call
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=self.messages
+                # You can add other parameters here if needed, e.g., temperature=0.7
+            )
+
+            # Extract the response content
+            assistant_message = response.choices[0].message.content
             self.result_ready.emit(assistant_message)
             print("--- API Thread Finished (Success) ---")
-        except requests.exceptions.RequestException as e:
-            print(f"Request Exception: {e}")
-            error_message = f"API Error: {e}"
-            if hasattr(e, 'response') and e.response is not None:
-                 try:
-                     error_details = e.response.json()
-                     error_message += f"\nDetails: {error_details}"
-                     print(f"API Error Details: {error_details}")
-                 except requests.exceptions.JSONDecodeError:
-                     error_message += f"\nResponse Text: {e.response.text[:200]}..."
-                     print(f"API Error Response Text: {e.response.text[:200]}...")
+
+        # Handle specific OpenAI errors and general exceptions
+        except openai.AuthenticationError as e:
+            error_message = f"OpenAI Auth Error: Check API Key/Base URL. Details: {e}"
+            print(error_message)
             self.result_ready.emit(error_message)
-            print("--- API Thread Finished (Request Error) ---")
+            print("--- API Thread Finished (Auth Error) ---")
+        except openai.APIConnectionError as e:
+            error_message = f"OpenAI Connection Error: Could not connect to {self.base_url}. Details: {e}"
+            print(error_message)
+            self.result_ready.emit(error_message)
+            print("--- API Thread Finished (Connection Error) ---")
+        except openai.RateLimitError as e:
+            error_message = f"OpenAI Rate Limit Error: Too many requests. Details: {e}"
+            print(error_message)
+            self.result_ready.emit(error_message)
+            print("--- API Thread Finished (Rate Limit Error) ---")
+        except openai.APIError as e: # Catch other OpenAI API errors
+            error_message = f"OpenAI API Error: {e.status_code} - {getattr(e, 'message', str(e))}"
+            print(f"APIError: Status={e.status_code}, Response={e.response}")
+            self.result_ready.emit(error_message)
+            print("--- API Thread Finished (API Error) ---")
         except KeyError as e:
+            # Less likely with the openai library, but keep just in case
             print(f"KeyError parsing API response: {e}")
-            if 'data' in locals():
-                 print(f"Received Data: {data}")
-            else:
-                 print("Received Data: Not available (error occurred before or during parsing)")
             self.result_ready.emit(f"API Response Parse Error: Missing key {e}")
             print("--- API Thread Finished (Parse Error) ---")
-        except Exception as e:
-            print(f"Unexpected Error in API thread: {e}")
-            self.result_ready.emit(f"An unexpected error occurred: {e}")
+        except Exception as e: # Catch any other unexpected errors
+            error_message = f"Unexpected Error in API thread: {type(e).__name__}: {e}"
+            print(error_message)
+            self.result_ready.emit(error_message)
             print("--- API Thread Finished (Unexpected Error) ---")
 
 
-#  Window Classes
+# Window Classes (Largely Unchanged)
 
 class CharacterWindow(QMainWindow):
     position_changed = Signal(QPoint)
@@ -149,158 +146,96 @@ class CharacterWindow(QMainWindow):
     def __init__(self, manager):
         super().__init__()
         self.manager = manager
-
-        # Keep Tool hint to try and keep off taskbar/alt-tab
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint |
                             Qt.WindowType.WindowStaysOnTopHint |
                             Qt.WindowType.Tool)
-        # Crucial for transparency without explicit mask
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        # WA_NoSystemBackground might still be helpful
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
-
-        # Set fixed window size based on configuration *before* loading content
         self.setFixedSize(QSize(CHARACTER_WIDTH, CHARACTER_HEIGHT))
-
-        #  Character Display Label
         self.label = QLabel()
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Size policy Ignored helps when parent (window) has fixed size
         self.label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.setCentralWidget(self.label)
-
-        #  Load Initial Content
-        # Call the simplified content loading method
-        # Startup check in __main__ should guarantee IDLE_CHARACTER_PATH exists
-        self.set_content(IDLE_CHARACTER_PATH)
-
-        #  Add Close Button ('X')
+        self.set_content(IDLE_CHARACTER_PATH) # Assumes exists from main check
         self.close_button = QPushButton('X', self)
         self.close_button.setStyleSheet("""
-            QPushButton {
-                border: none;
-                background-color: transparent;
-                color: red;
-                font-weight: bold;
-                font-size: 14px;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                color: darkred;
-            }
+            QPushButton { border: none; background-color: transparent; color: red; font-weight: bold; font-size: 14px; padding: 0px; }
+            QPushButton:hover { color: darkred; }
         """)
         self.close_button.setFixedSize(20, 20)
-        self._reposition_close_button() # Position based on fixed window size
+        self._reposition_close_button()
         self.close_button.clicked.connect(self.manager._hide_windows)
-
-        #  Dragging
         self._dragging = False
         self._offset = QPoint()
         self._drag_start_pos = QPoint()
 
     def _reposition_close_button(self):
-         """Positions the close button in the top-right corner."""
-         # This should work correctly now that setFixedSize is called early
-         self.close_button.move(self.width() - self.close_button.width() - 5, 5)
+        self.close_button.move(self.width() - self.close_button.width() - 5, 5)
 
     def set_content(self, image_path):
-        """Loads QMovie or QPixmap and sets it on the label, scaling to fit window."""
-        # Assumes image_path exists due to startup check.
         print(f"Setting character content to: {image_path}")
-
-        # Stop any existing movie
         movie = self.label.movie()
         if isinstance(movie, QMovie):
             movie.stop()
-            self.label.setMovie(None) # Important to clear the movie from the label
-
-        # Clear any existing pixmap
+            self.label.setMovie(None)
         self.label.setPixmap(QPixmap())
-
-        # Try loading as QMovie first
         movie = QMovie(image_path)
         if movie.isValid():
             print(f"Loading as QMovie: {image_path}")
             self.label.setMovie(movie)
-            # Scale movie to the fixed window size. Content will scale within the label.
             movie.setScaledSize(self.size())
             movie.start()
         else:
-            # Fallback to QPixmap if QMovie failed
             print(f"Could not load as QMovie, trying QPixmap: {image_path}")
             pixmap = QPixmap(image_path)
             if not pixmap.isNull():
                 print(f"Loading as QPixmap: {image_path}")
-                # Scale pixmap to fit the fixed window size, keeping aspect ratio
-                # The label will center this scaled pixmap within its bounds.
-                scaled_pixmap = pixmap.scaled(self.size(),
-                                               Qt.AspectRatioMode.KeepAspectRatio,
-                                               Qt.TransformationMode.SmoothTransformation)
+                scaled_pixmap = pixmap.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                 self.label.setPixmap(scaled_pixmap)
             else:
-                # If both fail (e.g., file exists but is corrupt/unsupported format)
-                # No placeholder is created. Log error and leave label blank or with previous content.
-                print(f"ERROR: Could not load image/movie from {image_path} even though it exists. Check file format/integrity.")
-                # Optional: Raise an exception here too if you want a crash on load failure
-                # raise RuntimeError(f"Failed to load valid image/movie from {image_path}")
+                print(f"ERROR: Could not load image/movie from {image_path}. Check file.")
 
     def closeEvent(self, event):
         print("Character window close event triggered.")
         self.manager._hide_windows()
         event.ignore()
 
-    #  Mouse Events (Simplified based on removing mask complexities)
     def mousePressEvent(self, event):
-        # Check if the press is on the close button area
         if self.close_button.geometry().contains(event.position().toPoint()):
-            # Let the button handle its own press/click
             super().mousePressEvent(event)
-            # Ensure dragging doesn't start if button pressed
             self._dragging = False
-            return # Stop further processing
-
-        # If not on the button, handle potential drag start
+            return
         if event.button() == Qt.MouseButton.LeftButton:
-            self._dragging = False # Reset flag
+            self._dragging = False
             self._drag_start_pos = event.globalPosition().toPoint()
             self._offset = event.globalPosition().toPoint() - self.pos()
-            event.accept() # Accept event for potential drag or click
+            event.accept()
         else:
             event.ignore()
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.MouseButton.LeftButton:
-            # Start dragging only if threshold exceeded since press
             move_threshold = 5
             if not self._dragging and (event.globalPosition().toPoint() - self._drag_start_pos).manhattanLength() > move_threshold:
                 self._dragging = True
-
-            # If dragging, move the window
             if self._dragging:
                 self.move(event.globalPosition().toPoint() - self._offset)
                 self.position_changed.emit(self.pos())
                 event.accept()
-            # If not dragging yet (below threshold), implicitly ignore
         else:
             event.ignore()
 
     def mouseReleaseEvent(self, event):
-        # Check if release is on the button (press handled above, but good practice)
         if self.close_button.geometry().contains(event.position().toPoint()):
             super().mouseReleaseEvent(event)
-            # Reset drag state just in case
             self._dragging = False
-            return # Button handles its own release
-
-        # Handle drag end or click
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             if self._dragging:
-                # Drag finished
                 self._dragging = False
-                self.position_changed.emit(self.pos()) # Emit final position
+                self.position_changed.emit(self.pos())
                 event.accept()
             else:
-                # Click occurred (no significant drag)
                 print("Character window clicked.")
                 self.clicked.emit()
                 event.accept()
@@ -309,139 +244,89 @@ class CharacterWindow(QMainWindow):
 
     def paintEvent(self, event):
          painter = QPainter(self)
-         # Explicitly fill with transparent color. Necessary for WA_TranslucentBackground.
          painter.fillRect(self.rect(), QColor(0, 0, 0, 0))
-         # Let the base class draw children (QLabel with pixmap/movie, QPushButton)
-         # Transparency of the children (e.g., PNG alpha) will render correctly.
          super().paintEvent(event)
 
 
-#  InputBoxWindow
 class InputBoxWindow(QWidget):
     text_entered = Signal(str)
-
     def __init__(self):
         super().__init__()
-        # Added Tool hint to keep it off taskbar/alt+tab
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
-        # We keep the window background transparent. The widgets inside will draw their own backgrounds.
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        # Use a layout for text field and button
         self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(5, 5, 5, 5) # Add some padding inside the window
-        self.layout.setSpacing(5) # Space between widgets
-
+        self.layout.setContentsMargins(5, 5, 5, 5)
+        self.layout.setSpacing(5)
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText("Type your message here...")
         self.input_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        # Optional: Style the QLineEdit if WA_TranslucentBackground causes issues with default look
-        # self.input_field.setStyleSheet("background-color: white; border: 1px solid gray; padding: 2px;")
-
-
         self.send_button = QPushButton("Send")
         self.send_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        self.send_button.setFixedWidth(60) # Adjust button width as needed
-        # Optional: Style the QPushButton
-        # self.send_button.setStyleSheet("background-color: lightgray; border: 1px solid gray; padding: 2px;")
-
-
+        self.send_button.setFixedWidth(60)
         self.layout.addWidget(self.input_field)
         self.layout.addWidget(self.send_button)
-
         self.setLayout(self.layout)
-
-        # Set window size based on config
         self.setFixedSize(INPUT_BOX_WIDTH, INPUT_BOX_HEIGHT)
-
-        # Connect signals
         self.input_field.returnPressed.connect(self._send_message)
         self.send_button.clicked.connect(self._send_message)
-
-        # Hide initially
         self.hide()
 
     def _send_message(self):
-        """Common slot for Enter key and Send button."""
         text = self.input_field.text().strip()
         if text:
             print(f"Input box sending: {text}")
             self.text_entered.emit(text)
             self.input_field.clear()
-            self.hide() # Hide input box after sending
+            self.hide()
 
     def show_and_focus(self):
         print("Showing input box")
         self.show()
-        self.input_field.setFocus() # Set focus to the input field
-        # Bring window to front explicitly
+        self.input_field.setFocus()
         self.raise_()
         self.activateWindow()
-        # Need to process events to ensure focus is applied on some window managers
         QApplication.processEvents()
 
 
-#  SpeechBubbleWindow
 class SpeechBubbleWindow(QWidget):
     def __init__(self):
         super().__init__()
-        # Added Tool hint to keep it off taskbar/alt+tab
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground) # Essential for seeing transparency
-        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground) # Helps with transparency rendering
-
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setFixedSize(BUBBLE_WIDTH, BUBBLE_HEIGHT)
-
-        #  Text Display (QTextBrowser for scrolling)
-        self.text_browser = QTextBrowser() # Use QTextBrowser for scrolling
-        self.text_browser.setReadOnly(True) # Make it read-only (default for QTextBrowser)
-        # Set text color and transparent background
+        self.text_browser = QTextBrowser()
+        self.text_browser.setReadOnly(True)
         self.text_browser.setStyleSheet(f"""
             QTextBrowser {{
-                background-color: transparent; /* Crucial for showing the bubble drawing underneath */
-                border: none; /* Remove default border */
-                color: {BUBBLE_BORDER_COLOR.name()}; /* Text color */
+                background-color: transparent; border: none; color: {BUBBLE_BORDER_COLOR.name()};
             }}
         """)
-        # Optional: Customize scrollbars if needed
-        # self.text_browser.verticalScrollBar().setStyleSheet("QScrollBar::vertical { ... }")
-
-
         layout = QVBoxLayout(self)
-        # Adjust margins to keep the text browser inside the drawn bubble shape.
-        text_margin_left = BUBBLE_BORDER_THICKNESS + 15 # Padding from left drawn border
-        text_margin_top = BUBBLE_BORDER_THICKNESS + 5  # Padding from top drawn border
-        text_margin_right = BUBBLE_BORDER_THICKNESS + 15 # Padding from right drawn border
-        text_margin_bottom = BUBBLE_TAIL_HEIGHT + 5 # Space above the tail area + some padding
-        layout.setContentsMargins(text_margin_left, text_margin_top,
-                                  text_margin_right, text_margin_bottom)
-
-        layout.addWidget(self.text_browser) # Add the text browser to the layout
+        text_margin_left = BUBBLE_BORDER_THICKNESS + 15
+        text_margin_top = BUBBLE_BORDER_THICKNESS + 5
+        text_margin_right = BUBBLE_BORDER_THICKNESS + 15
+        text_margin_bottom = BUBBLE_TAIL_HEIGHT + 5
+        layout.setContentsMargins(text_margin_left, text_margin_top, text_margin_right, text_margin_bottom)
+        layout.addWidget(self.text_browser)
         self.setLayout(layout)
-
-        # Hide initially
         self.hide()
 
     def set_text(self, text):
-        # Use setText on the QTextBrowser
         self.text_browser.setText(text)
-        # Trigger repaint to ensure the drawn bubble updates if needed (though text doesn't affect shape)
         self.update()
 
-
     def position_window(self, character_pos: QPoint, character_size: QSize):
-        """Calculates and sets the bubble window position relative to the character."""
-        tail_relative_x_in_bubble = 30 # Approx x pos of tail tip relative to window (0,0)
-        tail_relative_y_in_bubble = self.height() - 10 # Approx y pos of tail tip relative to window (0,0)
+        tail_relative_x_in_bubble = 30
+        tail_relative_y_in_bubble = self.height() - 10
         target_char_x = character_pos.x() + character_size.width() // 2
-        target_char_y = character_pos.y() + character_size.height() * 0.15 # 15% down from top of character
+        target_char_y = character_pos.y() + character_size.height() * 0.15
         bubble_x = target_char_x - tail_relative_x_in_bubble
         bubble_y = target_char_y - tail_relative_y_in_bubble
         screen_geometry = QApplication.primaryScreen().geometry()
-        bubble_x = max(0, min(int(bubble_x), screen_geometry.width() - self.width())) # Cast to int for move()
-        bubble_y = max(0, min(int(bubble_y), screen_geometry.height() - self.height())) # Cast to int for move()
+        bubble_x = max(0, min(int(bubble_x), screen_geometry.width() - self.width()))
+        bubble_y = max(0, min(int(bubble_y), screen_geometry.height() - self.height()))
         self.move(bubble_x, bubble_y)
-
 
     def show_bubble(self, text, character_pos: QPoint, character_size: QSize):
         print(f"Showing bubble with text: {text[:50]}...")
@@ -451,28 +336,20 @@ class SpeechBubbleWindow(QWidget):
         self.raise_()
         self.activateWindow()
 
-
     def paintEvent(self, event):
-        """Draws the custom speech bubble shape WITHOUT a border."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-
-        # Fill the background rect with transparent to ensure clean drawing area
         painter.fillRect(self.rect(), QColor(0, 0, 0, 0))
-
         path = QPainterPath()
-        body_top = BUBBLE_BORDER_THICKNESS # Keep using this for margin calculation, even without border
+        body_top = BUBBLE_BORDER_THICKNESS
         body_left = BUBBLE_BORDER_THICKNESS
         body_width = self.width() - 2 * BUBBLE_BORDER_THICKNESS
         body_height = self.height() - 2 * BUBBLE_BORDER_THICKNESS - BUBBLE_TAIL_HEIGHT
-
-        # Check if dimensions are valid before drawing
         if body_width <= 0 or body_height <= 0:
              print("Warning: Bubble dimensions too small to draw.")
              super().paintEvent(event)
              return
-
         bubble_body_rect = QRectF(body_left, body_top, body_width, body_height)
         path.addRoundedRect(bubble_body_rect, BUBBLE_CORNER_RADIUS, BUBBLE_CORNER_RADIUS)
         tail_tip = QPointF(30, self.height() - 10)
@@ -489,22 +366,21 @@ class SpeechBubbleWindow(QWidget):
         super().paintEvent(event)
 
 
-#  Application Manager
+# Application Manager
 
 class ApplicationManager:
-    # Define states
     STATE_IDLE = "idle"
     STATE_THINKING = "thinking"
 
     def __init__(self):
         print("Initializing ApplicationManager")
         self._app_state = self.STATE_IDLE
-
         self.character_window = CharacterWindow(self)
         self.input_box_window = InputBoxWindow()
         self.speech_bubble_window = SpeechBubbleWindow()
-
         self.conversation_history = []
+
+        # Store OpenAI config
         self.openai_api_key = OPENAI_API_KEY
         self.openai_api_base = OPENAI_API_BASE
         self.openai_model = OPENAI_MODEL
@@ -516,36 +392,31 @@ class ApplicationManager:
         initial_y = screen_geometry.height() - self.character_window.height() - 50
         self.character_window.move(initial_x, initial_y)
 
-        # Check for API Key and Model after window setup
-        missing_config_messages = []
+        # Check for missing OpenAI config and show warning
+        config_warning = None
         if not self.openai_api_key:
-            msg = "Warning: OPENAI_API_KEY not set. API calls will fail."
-            print(msg)
-            missing_config_messages.append(msg)
-        if not self.openai_model:
-            msg = "Warning: OPENAI_MODEL not set. API calls will fail. Please set it in your .env file or environment."
-            print(msg)
-            missing_config_messages.append(msg)
-        
-        if missing_config_messages:
-            # Show combined message after a short delay
-            QTimer.singleShot(100, lambda: self.speech_bubble_window.show_bubble(
-                "\n".join(missing_config_messages),
+            config_warning = "Warning: OPENAI_API_KEY not set."
+        elif not self.openai_api_base:
+            config_warning = "Warning: OPENAI_API_BASE not set."
+        elif not self.openai_model:
+            config_warning = "Warning: OPENAI_MODEL not set."
+
+        if config_warning:
+             print(f"CONFIG WARNING: {config_warning} API calls may fail.")
+             QTimer.singleShot(100, lambda: self.speech_bubble_window.show_bubble(
+                f"{config_warning} Check .env file or environment variables.",
                 self.character_window.pos(),
                 self.character_window.size()
-            ))
-
+             ))
 
         self.character_window.position_changed.connect(self.update_window_positions)
         self.character_window.clicked.connect(self.handle_character_clicked)
         self.input_box_window.text_entered.connect(self.handle_input_entered)
 
         self.api_thread = None
-
         self.character_window.show()
         self.update_window_positions(self.character_window.pos())
-
-        print(f"ApplicationManager initialized. API Base: {self.openai_api_base}, Model: {self.openai_model}")
+        print("ApplicationManager initialized.")
 
     def _set_app_state(self, state):
         if self._app_state == state:
@@ -560,9 +431,13 @@ class ApplicationManager:
     def _setup_tray_icon(self):
         tray_icon_obj = QIcon(TRAY_ICON_PATH)
         if tray_icon_obj.isNull():
-             print(f"ERROR: Could not load icon from {TRAY_ICON_PATH}. Check file format/integrity.")
+             print(f"ERROR: Could not load icon from {TRAY_ICON_PATH}.")
+             # Create a dummy icon to prevent errors, although it won't look right
+             pixmap = QPixmap(32, 32)
+             pixmap.fill(Qt.GlobalColor.magenta) # Magenta often indicates missing texture
+             tray_icon_obj = QIcon(pixmap)
         self.tray_icon = QSystemTrayIcon(tray_icon_obj, QApplication.instance())
-        self.tray_icon.setToolTip("AI Character Assistant")
+        self.tray_icon.setToolTip("Clippy 2.Oh!") # Updated Tooltip
         self.tray_menu = QMenu()
         self.show_action = self.tray_menu.addAction("Show")
         self.hide_action = self.tray_menu.addAction("Hide")
@@ -578,11 +453,14 @@ class ApplicationManager:
     def _tray_icon_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             if self.character_window.isVisible():
+                print("Tray icon clicked, hiding windows.")
                 self._hide_windows()
             else:
+                print("Tray icon clicked, showing windows.")
                 self._show_windows()
 
     def _show_windows(self):
+        print("Showing windows...")
         self.character_window.show()
         self.update_window_positions(self.character_window.pos())
         self.character_window.raise_()
@@ -592,6 +470,7 @@ class ApplicationManager:
         self._set_app_state(self.STATE_IDLE)
 
     def _hide_windows(self):
+        print("Hiding windows...")
         self.character_window.hide()
         self.input_box_window.hide()
         self.speech_bubble_window.hide()
@@ -606,63 +485,71 @@ class ApplicationManager:
              self.speech_bubble_window.raise_()
 
     def handle_character_clicked(self):
+        print("Character clicked signal received.")
         self.speech_bubble_window.hide()
         if self.input_box_window.isVisible():
+            print("Input box visible, hiding.")
             self.input_box_window.hide()
         else:
+            print("Input box hidden, showing and focusing.")
             self.update_window_positions(self.character_window.pos())
             self.input_box_window.show_and_focus()
             self.input_box_window.raise_()
 
     def handle_input_entered(self, text):
+        print(f"Handle input entered: {text}")
         self.conversation_history.append({"role": "user", "content": text})
         while len(self.conversation_history) > MAX_HISTORY_MESSAGES:
              self.conversation_history.pop(0)
+        print(f"Persistent history trimmed to {len(self.conversation_history)} messages.")
         self.start_api_request()
 
     def _api_thread_finished(self):
+         print("API thread finished, resetting thread reference and setting state to idle.")
          self.api_thread = None
-         self._set_app_state(self.STATE_IDLE)
+         self._set_app_state(self.STATE_IDLE) # Set back to idle AFTER result processed
 
     def start_api_request(self):
         if self.api_thread is not None and self.api_thread.isRunning():
             print("API thread already running. Waiting...")
             current_bubble_text = self.speech_bubble_window.text_browser.toPlainText()
-            if not self.speech_bubble_window.isVisible() or "Already thinking..." not in current_bubble_text:
-                 self.speech_bubble_window.show_bubble("Already thinking...", self.character_window.pos(), self.character_window.size())
-            self._set_app_state(self.STATE_THINKING)
+            if not self.speech_bubble_window.isVisible() or "Thinking..." not in current_bubble_text:
+                 self.speech_bubble_window.show_bubble(
+                    "Already thinking...", self.character_window.pos(), self.character_window.size()
+                 )
+            self._set_app_state(self.STATE_THINKING) # Ensure state is thinking
             return
 
-        if not self.openai_api_key:
-            print("API key (OPENAI_API_KEY) not set. Skipping API request.")
+        # Check for missing config *before* starting thread
+        config_error = None
+        if not self.openai_api_key: config_error = "OPENAI_API_KEY not set."
+        elif not self.openai_api_base: config_error = "OPENAI_API_BASE not set."
+        elif not self.openai_model: config_error = "OPENAI_MODEL not set."
+
+        if config_error:
+            print(f"API Config Error: {config_error} Skipping API request.")
             current_bubble_text = self.speech_bubble_window.text_browser.toPlainText()
-            msg = "API key (OPENAI_API_KEY) not set. Cannot get response."
-            if not self.speech_bubble_window.isVisible() or msg not in current_bubble_text:
-                self.speech_bubble_window.show_bubble(msg, self.character_window.pos(), self.character_window.size())
-            self._set_app_state(self.STATE_IDLE)
-            return
-            
-        if not self.openai_model:
-            print("API Model (OPENAI_MODEL) not set. Skipping API request.")
-            current_bubble_text = self.speech_bubble_window.text_browser.toPlainText()
-            msg = "API Model (OPENAI_MODEL) not set. Cannot get response. Please configure it."
-            if not self.speech_bubble_window.isVisible() or msg not in current_bubble_text:
-                self.speech_bubble_window.show_bubble(msg, self.character_window.pos(), self.character_window.size())
-            self._set_app_state(self.STATE_IDLE)
+            if not self.speech_bubble_window.isVisible() or config_error not in current_bubble_text:
+                self.speech_bubble_window.show_bubble(
+                    f"API Config Error: {config_error}", self.character_window.pos(), self.character_window.size()
+                )
+            self._set_app_state(self.STATE_IDLE) # Ensure idle if config error
             return
 
-
-        print("Starting API request thread.")
+        print("Starting OpenAI API request thread.")
         self._set_app_state(self.STATE_THINKING)
-        self.speech_bubble_window.show_bubble("Thinking...", self.character_window.pos(), self.character_window.size())
+        self.speech_bubble_window.show_bubble(
+            "Thinking...", self.character_window.pos(), self.character_window.size()
+        )
 
         system_message = {"role": "system", "content": SYSTEM_PROMPT}
         messages_to_send = [system_message] + list(self.conversation_history)
 
-        self.api_thread = OpenAiApiThread(
+        # Use the renamed thread class and pass new parameters
+        self.api_thread = OpenAIAPIThread(
              messages=messages_to_send,
              api_key=self.openai_api_key,
-             api_base=self.openai_api_base,
+             base_url=self.openai_api_base, # Pass base URL
              model=self.openai_model
         )
         self.api_thread.result_ready.connect(self.handle_api_result)
@@ -672,25 +559,46 @@ class ApplicationManager:
 
     def handle_api_result(self, result_text):
         print(f"Handle API result: {result_text[:50]}...")
-        is_error = result_text.startswith(("Error:", "API Error:", "API Response Parse Error:"))
+        # Basic error check (can be refined based on OpenAI error formats)
+        is_error = result_text.startswith(("Error:", "OpenAI")) # Check for custom and OpenAI lib errors
         display_text = result_text
+
         if is_error:
             print("API returned an error.")
+            # Don't add errors to history
         else:
+            # Valid response, add to persistent history
             self.conversation_history.append({"role": "assistant", "content": display_text})
             while len(self.conversation_history) > MAX_HISTORY_MESSAGES:
                  self.conversation_history.pop(0)
-            print(f"API returned a response, persistent history updated to {len(self.conversation_history)} messages.")
-        self.speech_bubble_window.show_bubble(display_text, self.character_window.pos(), self.character_window.size())
+            print(f"API returned a response, history updated to {len(self.conversation_history)} messages.")
+
+        self.speech_bubble_window.show_bubble(
+            display_text, self.character_window.pos(), self.character_window.size()
+        )
+        # State set back to IDLE in _api_thread_finished
 
 
-#  Main Execution
+# Main Execution
 if __name__ == "__main__":
+    print("Starting Clippy 2.Oh! (OpenAI compatible version)")
+    # Check for required assets
     required_files = [IDLE_CHARACTER_PATH, BUSY_CHARACTER_PATH, TRAY_ICON_PATH]
     for file_path in required_files:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Required application asset not found: {file_path}")
         print(f"Asset check OK: {file_path}")
+
+    # Check Python package dependency
+    try:
+        import openai
+        print(f"Found OpenAI library version: {openai.__version__}")
+    except ImportError:
+        print("\n--- ERROR ---")
+        print("The 'openai' library is not installed.")
+        print("Please install it by running: pip install openai")
+        print("-------------\n")
+        sys.exit(1) # Exit if dependency is missing
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)

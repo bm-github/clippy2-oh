@@ -26,7 +26,7 @@ To bring **Clippy 2.Oh** to life, make sure you have:
 2.  **Required Libraries:** Install 'em easily!
     ```bash
     pip install -r requirements.txt
-    # (Or manually: pip install PySide6 requests python-dotenv)
+    # (Or manually: pip install PySide6 openai python-dotenv)
     ```
 
 ---
@@ -38,6 +38,7 @@ Ready for your very own **Clippy 2.Oh**? Follow these steps:
 1.  **Clone the Repository:**
     ```bash
     # Make sure you grab the right code!
+    # TODO: Replace with your actual repository URL if different
     git clone https://github.com/bm-github/clippy2-oh.git
     cd clippy2-oh
     ```
@@ -47,26 +48,28 @@ Ready for your very own **Clippy 2.Oh**? Follow these steps:
     ```
 3.  **Configure AI Access (Super Important! ✨):**
     *   You need access to an OpenAI-compatible API endpoint. This could be the official OpenAI API, OpenRouter.ai, or a local server running a model.
-    *   Create a file named `.env` right here in the main project folder.
+    *   Create a file named `.env` right here in the main project folder. (You can copy `env.example` to `.env` and then edit it).
     *   Add the following variables, configuring them for your chosen API:
         ```dotenv
         # .env file contents
         # --- REQUIRED ---
-        OPENAI_API_KEY="YOUR_API_KEY_HERE" # Your API key (or placeholder if service doesn't need one)
-        OPENAI_MODEL="YOUR_MODEL_NAME_HERE" # The specific model name you want to use (e.g., "gpt-3.5-turbo", "mistralai/mistral-7b-instruct", "local-model")
-
-        # --- OPTIONAL ---
-        # OPENAI_API_BASE="https://api.openai.com/v1" # The base URL for the API. Defaults to OpenAI if not set.
-                                                    # Examples:
-                                                    # "https://openrouter.ai/api/v1" (for OpenRouter)
-                                                    # "http://localhost:1234/v1" (for LM Studio - check your port)
-                                                    # "http://localhost:11434/v1" (for Ollama with proxy - check your port)
+        OPENAI_API_KEY="YOUR_API_KEY_HERE"    # Your API key (or placeholder like "NA" if your local service doesn't require one but the script expects a value)
+        OPENAI_API_BASE="YOUR_API_BASE_URL"   # The base URL for the API.
+                                              # Examples:
+                                              # "https://api.openai.com/v1" (for official OpenAI)
+                                              # "https://openrouter.ai/api/v1" (for OpenRouter)
+                                              # "http://localhost:1234/v1" (for LM Studio - check your port)
+                                              # "http://localhost:11434/v1" (for Ollama, if using an OpenAI-compatible proxy/endpoint - check your setup)
+        OPENAI_MODEL="YOUR_MODEL_NAME_HERE"   # The specific model name you want to use
+                                              # Examples:
+                                              # "gpt-3.5-turbo", "gpt-4" (for OpenAI)
+                                              # "mistralai/mistral-7b-instruct", "google/gemini-pro" (for OpenRouter)
+                                              # "local-model" (often used for LM Studio, refers to the loaded model)
         ```
-    *   **`OPENAI_API_KEY`** and **`OPENAI_MODEL`** are **REQUIRED**. If they are not set, API calls will fail, and I'll let you know in a bubble!
-    *   **`OPENAI_API_BASE`** defaults to `https://api.openai.com/v1` if not specified. Set this if you're using a provider other than OpenAI's official service.
+    *   **`OPENAI_API_KEY`**, **`OPENAI_API_BASE`**, and **`OPENAI_MODEL`** are **REQUIRED**. If any of these are not set, API calls will fail, and I'll let you know in a bubble!
 
 4.  **Character Assets:** 🖼️
-    *   Make sure you have these files in the same folder (or change the paths in `clippy2-oh.py`):
+    *   Make sure you have these files in the same folder (or change the hardcoded paths in `clippy2-oh.py`):
         *   `character_idle.png` (or `character_idle.gif`)
         *   `character_busy.png` (or `character_busy.gif`)
         *   `tray_icon.png` (a little 32x32 guy for the system tray)
@@ -78,7 +81,7 @@ It's super easy:
 
 1.  **Run the Script (Windowless Mode!):**
     ```bash
-    # On Windows/Mac, 'pythonw' often prevents an extra console window!
+    # On Windows/Mac, 'pythonw clippy2-oh.py' often prevents an extra console window!
     pythonw clippy2-oh.py
     # If 'pythonw' isn't found or you want the console, just use 'python':
     # python clippy2-oh.py
@@ -99,7 +102,7 @@ Want to tinker with **Clippy 2.Oh**? Go for it!
 
 *   **Appearance:** Swap out `character_idle.png`/`.gif`, `character_busy.png`/`.gif`, and `tray_icon.png` with your own images! (Check `CHARACTER_WIDTH`/`HEIGHT` in the script for size hints). Maybe give me a party hat?
 *   **Personality:** Edit the `SYSTEM_PROMPT` variable near the top of `clippy2-oh.py`. This is where you tell the AI how to act! Make me sassy, serious, or super-duper helpful! ✨
-*   **AI Brain:** Change `OPENAI_MODEL` and `OPENAI_API_BASE` in your `.env` file to try different AI models or providers. Experiment with my intelligence!
+*   **AI Brain:** Change `OPENAI_MODEL` and `OPENAI_API_BASE` (and `OPENAI_API_KEY` if needed) in your `.env` file to try different AI models or providers. Experiment with my intelligence!
 *   **Sizes & Colors:** Adjust constants like `BUBBLE_WIDTH`, `BUBBLE_FILL_COLOR`, etc., at the beginning of `clippy2-oh.py`. Match your desktop theme!
 *   **History Limit:** Just FYI, I only remember the last `MAX_HISTORY_MESSAGES` (default: 10) messages between us. My memory isn't *infinite*... yet!
 *   **Look & Feel:** All the windows are frameless and transparent for that sleek, modern overlay vibe. **2.Oh** style!
